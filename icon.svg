@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="Track Geometry Recorder">
+  <rect width="192" height="192" rx="36" fill="#0d1117" />
+  <path d="M24 132h144" stroke="#8b949e" stroke-width="6" stroke-linecap="round" />
+  <path d="M24 148h144" stroke="#8b949e" stroke-width="6" stroke-linecap="round" />
+  <g stroke="#30363d" stroke-width="5" stroke-linecap="round">
+    <path d="M44 126v28M76 126v28M108 126v28M140 126v28" />
+  </g>
+  <path
+    d="M24 92c12 0 12-40 24-40s12 56 24 56 12-32 24-32 12 24 24 24 12-48 24-48 12 32 24 32"
+    fill="none"
+    stroke="#2f81f7"
+    stroke-width="8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

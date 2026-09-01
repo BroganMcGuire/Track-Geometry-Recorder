@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d1117" />
+    <title>Track Geometry Recorder</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>Track Geometry Recorder</h1>
+      <nav class="tabs">
+        <button type="button" class="tab" data-screen="setup" aria-current="page">Setup</button>
+        <button type="button" class="tab" data-screen="measure">Measure</button>
+        <button type="button" class="tab" data-screen="runs">Runs</button>
+      </nav>
+    </header>
+
+    <main>
+      <!-- Start screen: general information about the journey (report §2.2). -->
+      <section id="screen-setup" class="screen">
+        <form id="journey-form" class="card">
+          <h2>Journey</h2>
+          <label>Line
+            <input name="line" required placeholder="e.g. 830000" />
+          </label>
+          <label>Track
+            <select name="track">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="single">single</option>
+            </select>
+          </label>
+          <label>Initial kilometric point (km)
+            <input name="initialKpKm" type="number" step="0.001" value="0" />
+          </label>
+          <label>Direction of the kilometric points
+            <select name="kpDirection">
+              <option value="1">increasing</option>
+              <option value="-1">decreasing</option>
+            </select>
+          </label>
+          <label>Train type
+            <input name="trainType" placeholder="e.g. TGV, regional, freight" />
+          </label>
+          <label>Position in the train
+            <input name="position" placeholder="e.g. coach 5, floor, above bogie" />
+          </label>
+
+          <h2>Device installation</h2>
+          <p class="hint">
+            Attach the device to the floor of the coach so it cannot slide in curves or
+            under braking. Lay it flat, screen up, top pointing to the front of the train.
+          </p>
+          <label>Vertical axis (AVC)
+            <select name="verticalAxis">
+              <option value="z">z (phone flat on the floor)</option>
+              <option value="y">y</option>
+              <option value="x">x</option>
+            </select>
+          </label>
+          <label>Lateral axis (ATC)
+            <select name="lateralAxis">
+              <option value="x">x</option>
+              <option value="y">y</option>
+              <option value="z">z</option>
+            </select>
+          </label>
+          <label>Longitudinal axis (ALC)
+            <select name="longitudinalAxis">
+              <option value="y">y</option>
+              <option value="x">x</option>
+              <option value="z">z</option>
+            </select>
+          </label>
+
+          <button type="submit" class="primary">Start measurement</button>
+          <p id="setup-error" class="error" role="alert"></p>
+        </form>
+
+        <section class="card">
+          <h2>Sensor availability</h2>
+          <ul id="capabilities" class="capabilities"></ul>
+        </section>
+      </section>
+
+      <!-- Measurement screen: three acceleration graphs, speed and location. -->
+      <section id="screen-measure" class="screen" hidden>
+        <div class="card readouts">
+          <div><span class="value" id="readout-speed">–</span><span class="unit">km/h</span></div>
+          <div><span class="value" id="readout-kp">–</span><span class="unit">PK</span></div>
+          <div><span class="value" id="readout-rate">–</span><span class="unit">Hz</span></div>
+          <div><span class="value" id="readout-duration">0:00</span><span class="unit">elapsed</span></div>
+        </div>
+
+        <div class="card charts">
+          <canvas id="chart-vertical" aria-label="Vertical acceleration AVC"></canvas>
+          <canvas id="chart-lateral" aria-label="Lateral acceleration ATC"></canvas>
+          <canvas id="chart-longitudinal" aria-label="Longitudinal acceleration ALC"></canvas>
+        </div>
+
+        <div class="card">
+          <p id="position-line" class="hint">Waiting for a GNSS fix…</p>
+          <div class="markers">
+            <button type="button" data-marker="switch">Switch</button>
+            <button type="button" data-marker="bridge">Bridge</button>
+            <button type="button" data-marker="tunnel">Tunnel</button>
+            <button type="button" data-marker="level crossing">Level crossing</button>
+            <button type="button" data-marker="other">Other</button>
+          </div>
+          <p id="marker-log" class="hint"></p>
+          <button type="button" id="stop-button" class="danger">Stop and save</button>
+          <p id="measure-error" class="error" role="alert"></p>
+        </div>
+      </section>
+
+      <!-- Stored runs, post-processing and export. -->
+      <section id="screen-runs" class="screen" hidden>
+        <section class="card">
+          <h2>Recorded runs</h2>
+          <ul id="run-list" class="run-list"></ul>
+        </section>
+
+        <section class="card" id="processing-card" hidden>
+          <h2>Post-processing</h2>
+          <p class="hint">
+            Only raw data is stored during a run; synchronisation, resampling, filtering,
+            conversion to the space domain and threshold detection are applied here.
+          </p>
+          <form id="processing-form">
+            <label>Resampling frequency (Hz)
+              <input name="resampleHz" type="number" min="10" max="500" step="10" value="100" />
+            </label>
+            <label>Filter band (Hz)
+              <span class="row">
+                <input name="filterLowHz" type="number" min="0" step="0.1" value="0.4" />
+                <input name="filterHighHz" type="number" min="0" step="0.5" value="10" />
+              </span>
+            </label>
+            <label>Spatial step (m)
+              <input name="spatialStepM" type="number" min="0.05" step="0.05" value="0.25" />
+            </label>
+            <button type="submit" class="primary">Process</button>
+          </form>
+          <div id="processing-result"></div>
+          <div class="exports">
+            <button type="button" data-export="raw">Export raw CSV</button>
+            <button type="button" data-export="processed">Export processed CSV</button>
+            <button type="button" data-export="json">Export JSON</button>
+            <button type="button" data-export="delete" class="danger">Delete run</button>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
