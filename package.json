@@ -1,0 +1,12 @@
+{
+  "name": "track-geometry-recorder",
+  "version": "1.0.0",
+  "description": "Smartphone app for measuring carbody accelerations onboard trains, based on the UIC Harmotrack SWG3 technical report",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\"",
+    "start": "node tools/serve.js"
+  },
+  "license": "MIT"
+}
