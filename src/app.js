@@ -114,7 +114,8 @@ async function initNetworkModel() {
     button.disabled = true;
     status.textContent =
       'Network model not installed: run `npm run network-model` to derive the ELR, ' +
-      'the track IDs and the mileages from the Network Rail data.';
+      'the track IDs and the mileages from the Network Rail data. Until then, enter ' +
+      'the journey information by hand below.';
     return;
   }
   const elrList = document.getElementById('elr-list');

@@ -91,9 +91,12 @@ npm run network-model            # downloads the data and writes data/network-mo
 npm run network-model -- path/to/network-rail-gis   # from a local checkout
 ```
 
-The file is not committed (about 1590 ELRs and 42 700 waymarks); the application
-loads it at start-up when it is present and falls back to the journey
-information typed on the start screen when it is not. The data was released
+The file is not committed (about 1590 ELRs and 42 700 waymarks); it is derived
+instead by `npm run build`, which the deployment workflow runs before packaging
+the app, so the deployed version ships with it. The application loads it at
+start-up when it is present and falls back to the journey information typed on
+the start screen when it is not — that fallback is what the *Network model not
+installed* message on the start screen means. The data was released
 under the Open Government Licence v3.0 and must keep its attribution to Network
 Rail; it is a 2022–2024 extract, so the current version should be taken from the
 [Rail Data Marketplace](https://raildata.org.uk/) before operational use.
@@ -103,10 +106,12 @@ Rail; it is a 2022–2024 extract, so the current version should be taken from t
 ```bash
 npm start            # serves the folder on http://localhost:8080
 npm test             # runs the unit tests of the processing and export code
+npm run build        # derives data/network-model.json (alias of network-model)
 npm run network-model  # builds the ELR / track ID / mileage reference file
 ```
 
-The app itself is a static progressive web app with no build step; `pg` is only
+The app itself is a static progressive web app with no build step other than the
+network model reference file; `pg` is only
 used by the command line database tools. Motion and location sensors require a
 secure context, so on a real phone the folder must be served over HTTPS (or
 through a tunnel); the app can then be installed to the home screen and works
