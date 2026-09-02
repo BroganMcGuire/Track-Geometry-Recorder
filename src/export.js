@@ -88,10 +88,10 @@ export function markersCsv(run) {
  * @returns {string}
  */
 export function spaceDomainCsv(processed) {
-  const { distance, channels, kp, lat, lon } = processed.spaceDomain;
+  const { distance, channels, mileage, lat, lon } = processed.spaceDomain;
   const rows = distance.map((d, i) => [
     round(d, 3),
-    round(kp?.[i], 6),
+    round(mileage?.[i], 6),
     round(channels.vertical[i]),
     round(channels.lateral[i]),
     round(channels.longitudinal[i]),
@@ -99,7 +99,7 @@ export function spaceDomainCsv(processed) {
     round(lon?.[i], 8),
   ]);
   return toCsv(
-    ['distance_m', 'kp_km', 'avc_ms2', 'atc_ms2', 'alc_ms2', 'latitude', 'longitude'],
+    ['distance_m', 'mileage_mi', 'avc_ms2', 'atc_ms2', 'alc_ms2', 'latitude', 'longitude'],
     rows,
   );
 }
@@ -111,13 +111,13 @@ export function spaceDomainCsv(processed) {
  */
 export function eventsCsv(processed) {
   return toCsv(
-    ['channel', 'level', 'value_ms2', 'limit_ms2', 'kp_km', 'distance_m', 'length_m', 'latitude', 'longitude'],
+    ['channel', 'level', 'value_ms2', 'limit_ms2', 'mileage_mi', 'distance_m', 'length_m', 'latitude', 'longitude'],
     processed.events.map((e) => [
       e.channel,
       e.level,
       round(e.value, 3),
       round(e.limit, 3),
-      round(e.kp, 6),
+      round(e.mileage, 6),
       round(e.distance, 2),
       round(e.lengthM, 2),
       round(e.lat, 8),
@@ -151,7 +151,7 @@ export function download(filename, content, mime = 'text/csv') {
  */
 export function filePrefix(summary) {
   const date = (summary.startedAt ?? '').replace(/[:.]/g, '-');
-  const line = summary.line ? `line${summary.line}` : 'run';
+  const elr = summary.elr ? `elr${summary.elr}` : 'run';
   const track = summary.track ? `-track${summary.track}` : '';
-  return `${line}${track}-${date}`;
+  return `${elr}${track}-${date}`;
 }

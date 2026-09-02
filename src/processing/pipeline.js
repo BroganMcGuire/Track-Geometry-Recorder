@@ -9,7 +9,8 @@ import {
 import {
   cumulativeDistance,
   estimateSpeed,
-  toKilometricPoint,
+  metresToMiles,
+  toMileage,
 } from './localisation.js';
 import { detectThresholds, DEFAULT_THRESHOLDS } from './thresholds.js';
 
@@ -42,10 +43,10 @@ export const DEFAULT_OPTIONS = {
   spatialStepM: 0.25,
   /** Longest GNSS gap that is simply interpolated, in seconds. */
   maxGnssGapS: 3,
-  /** Kilometric point at the start of the run, in km. */
-  initialKpKm: 0,
-  /** +1 when the kilometric point increases along the run, -1 otherwise. */
-  kpDirection: 1,
+  /** Mileage at the start of the run, in miles. */
+  initialMileageMi: 0,
+  /** +1 when the mileage increases along the run, -1 otherwise. */
+  mileageDirection: 1,
   /** Threshold levels used by the detection step. */
   thresholds: DEFAULT_THRESHOLDS,
 };
@@ -121,7 +122,7 @@ export function processRun(run, userOptions = {}) {
     maxGapS: options.maxGnssGapS,
   });
   const distance = cumulativeDistance(times, speed);
-  const kp = toKilometricPoint(distance, options.initialKpKm, options.kpDirection);
+  const mileage = toMileage(distance, options.initialMileageMi, options.mileageDirection);
 
   const timeDomain = {
     time: times,
@@ -129,7 +130,7 @@ export function processRun(run, userOptions = {}) {
     speed,
     speedSource: source,
     distance,
-    kp,
+    mileage,
     lat: resampled.channels.lat,
     lon: resampled.channels.lon,
     altitude: resampled.channels.altitude,
@@ -157,7 +158,7 @@ export function processRun(run, userOptions = {}) {
  *
  * @param {Object} timeDomain output of the time-domain steps
  * @param {number} stepM spatial step in metres
- * @returns {{distance:number[], channels:Object<string,number[]>, kp:number[], lat:Array<number|null>, lon:Array<number|null>, step:number}}
+ * @returns {{distance:number[], channels:Object<string,number[]>, mileage:number[], lat:Array<number|null>, lon:Array<number|null>, step:number}}
  */
 export function toSpaceDomain(timeDomain, stepM) {
   const { distance } = timeDomain;
@@ -167,7 +168,7 @@ export function toSpaceDomain(timeDomain, stepM) {
     return {
       distance: [0],
       channels: { vertical: [0], lateral: [0], longitudinal: [0] },
-      kp: [timeDomain.kp[0]],
+      mileage: [timeDomain.mileage[0]],
       lat: [timeDomain.lat[0]],
       lon: [timeDomain.lon[0]],
       step: stepM,
@@ -181,7 +182,7 @@ export function toSpaceDomain(timeDomain, stepM) {
   return {
     distance: grid,
     channels,
-    kp: interpolateAt(distance, timeDomain.kp, grid),
+    mileage: interpolateAt(distance, timeDomain.mileage, grid),
     lat: interpolateAt(distance, timeDomain.lat, grid),
     lon: interpolateAt(distance, timeDomain.lon, grid),
     speed: interpolateAt(distance, timeDomain.speed, grid),
@@ -208,11 +209,13 @@ export function computeStatistics(timeDomain) {
     };
   }
   const speeds = timeDomain.speed;
+  const metresPerSecondToMph = 3600 / 1609.344;
   stats.speed = {
-    meanKmh: (speeds.reduce((a, b) => a + b, 0) / speeds.length) * 3.6,
-    maxKmh: Math.max(...speeds) * 3.6,
+    meanMph: (speeds.reduce((a, b) => a + b, 0) / speeds.length) * metresPerSecondToMph,
+    maxMph: Math.max(...speeds) * metresPerSecondToMph,
   };
   stats.distanceM = timeDomain.distance[timeDomain.distance.length - 1];
+  stats.distanceMi = metresToMiles(stats.distanceM);
   stats.durationS = timeDomain.time[timeDomain.time.length - 1] - timeDomain.time[0];
   return stats;
 }

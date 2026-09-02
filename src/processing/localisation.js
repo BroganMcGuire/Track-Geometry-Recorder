@@ -144,15 +144,28 @@ export function cumulativeDistance(times, speed) {
   return out;
 }
 
+/** Length of a statute mile in metres. */
+export const METRES_PER_MILE = 1609.344;
+
 /**
- * Convert a curvilinear distance into a kilometric point (PK).
+ * Convert a distance in metres into miles.
+ *
+ * @param {number} metres
+ * @returns {number} distance in miles
+ */
+export function metresToMiles(metres) {
+  return metres / METRES_PER_MILE;
+}
+
+/**
+ * Convert a curvilinear distance into a mileage along the ELR.
  *
  * @param {number[]} distanceM distance travelled in metres
- * @param {number} initialKpKm kilometric point at the start of the run
- * @param {number} direction +1 when the PK increases along the run, -1 otherwise
- * @returns {number[]} kilometric points in km
+ * @param {number} initialMileageMi mileage at the start of the run, in miles
+ * @param {number} direction +1 when the mileage increases along the run, -1 otherwise
+ * @returns {number[]} mileages in miles
  */
-export function toKilometricPoint(distanceM, initialKpKm, direction = 1) {
+export function toMileage(distanceM, initialMileageMi, direction = 1) {
   const sign = direction < 0 ? -1 : 1;
-  return distanceM.map((d) => initialKpKm + (sign * d) / 1000);
+  return distanceM.map((d) => initialMileageMi + (sign * metresToMiles(d)));
 }

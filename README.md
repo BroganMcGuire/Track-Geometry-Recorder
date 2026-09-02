@@ -14,13 +14,14 @@ in a post-processing step.
 
 **Recording (report §2 – Data collection)**
 
-- Start screen for the journey information: line, track, initial kilometric
-  point, PK direction, train type and position in the train.
+- Start screen for the journey information: ELR (e.g. `ECM1`), track (e.g.
+  `1100`), initial mileage in miles, mileage direction, train type and position
+  in the train.
 - Configurable mapping of the device axes (x, y, z) to the vehicle axes, so that
   the vertical (AVC), lateral (ATC) and longitudinal (ALC) channels are correct
   whatever the installation.
 - Measurement screen with one live graph per axis plus the current speed,
-  kilometric point, effective sampling rate and elapsed time.
+  mileage, effective sampling rate and elapsed time.
 - Angular positions of the phone are recorded throughout the run.
 - One-tap markers for a switch, bridge, tunnel or level crossing, which help the
   maintenance team locate a defect precisely (§4.1).
@@ -43,7 +44,7 @@ The pipeline implements the six documented steps:
 5. **Converting to the space domain** at a fixed spatial step of 0.25 m, to match
    the data produced by track measurement trains.
 6. **Detecting exceeded thresholds** and reporting each one with its peak value,
-   level, kilometric point and coordinates.
+   level, mileage and coordinates.
 
 **On-track localisation (report §4)**
 
@@ -53,8 +54,8 @@ The pipeline implements the six documented steps:
   speed is obtained by integrating the longitudinal acceleration from the last
   valid fix; the accumulated drift is spread linearly so that the estimate
   matches the fix found on the other side of the gap.
-- Distance is integrated from the speed and converted into a kilometric point
-  using the initial PK and the direction entered on the start screen.
+- Distance is integrated from the speed and converted into a mileage in miles
+  using the initial mileage and the direction entered on the start screen.
 
 ## Running it
 
@@ -63,10 +64,34 @@ npm start          # serves the folder on http://localhost:8080
 npm test           # runs the unit tests of the processing and export code
 ```
 
-The app is a static progressive web app with no build step and no runtime
-dependencies. Motion and location sensors require a secure context, so on a real
-phone the folder must be served over HTTPS (or through a tunnel); the app can
-then be installed to the home screen and works offline.
+The app itself is a static progressive web app with no build step; `pg` is only
+used by the command line database tools. Motion and location sensors require a
+secure context, so on a real phone the folder must be served over HTTPS (or
+through a tunnel); the app can then be installed to the home screen and works
+offline.
+
+## Supabase database
+
+Runs are always recorded locally first (IndexedDB). To keep a shared copy of
+them, a Supabase PostgreSQL database can be provisioned from `db/schema.sql`,
+which creates a `runs` table (journey information plus the raw acceleration,
+GNSS and marker datasheets as JSON) and a `threshold_events` table (one row per
+exceedance, queryable by ELR, track and mileage).
+
+The connection string is read from the `SUPABASE_DB_URL` environment variable
+and is never stored in the repository; copy `.env.example` and fill in the
+value from *Project settings → Database* in the Supabase dashboard.
+
+```bash
+export SUPABASE_DB_URL='postgres://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres'
+npm run db:setup                       # creates the tables (idempotent)
+npm run db:upload -- run-raw.json      # uploads a run exported from the app
+```
+
+`db:upload` stores the raw datasheets and runs the post-processing pipeline once
+so that the exceeded thresholds are stored alongside the run. TLS certificates
+are verified by default; set `SUPABASE_DB_SSL=no-verify` only when connecting
+through a proxy with a self-signed certificate.
 
 ## Measurement recommendations
 
@@ -103,9 +128,13 @@ src/export.js                  CSV and JSON exports
 src/ui/chart.js                lightweight rolling strip chart
 src/processing/pipeline.js     the six post-processing steps
 src/processing/signal.js       interpolation, resampling, Butterworth filtering
-src/processing/localisation.js speed, distance and kilometric point estimation
+src/processing/localisation.js speed, distance and mileage estimation
 src/processing/thresholds.js   threshold levels and exceedance detection
 tools/serve.js                 static server for local development
+tools/db.js                    Supabase connection helper (SUPABASE_DB_URL)
+tools/db-setup.js              applies db/schema.sql to the Supabase database
+tools/db-upload.js             uploads an exported run and its threshold events
+db/schema.sql                  Supabase (PostgreSQL) schema
 tests/                         unit tests (node --test)
 ```
 

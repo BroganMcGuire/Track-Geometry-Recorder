@@ -43,10 +43,10 @@ export function summarise(run) {
   const duration = samples > 1 ? run.acceleration[samples - 1].t : 0;
   return {
     startedAt: run.meta?.startedAt ?? new Date().toISOString(),
-    line: run.meta?.line ?? '',
+    elr: run.meta?.elr ?? '',
     track: run.meta?.track ?? '',
     trainType: run.meta?.trainType ?? '',
-    initialKpKm: run.meta?.initialKpKm ?? 0,
+    initialMileageMi: run.meta?.initialMileageMi ?? 0,
     samples,
     fixes: run.gnss.length,
     markers: run.markers?.length ?? 0,

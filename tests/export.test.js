@@ -13,7 +13,7 @@ import {
 import { summarise } from '../src/storage.js';
 
 const run = {
-  meta: { line: '830000', track: '1', startedAt: '2025-04-01T08:00:00.000Z', initialKpKm: 12 },
+  meta: { elr: 'ECM1', track: '1100', startedAt: '2025-04-01T08:00:00.000Z', initialMileageMi: 12 },
   acceleration: [
     { t: 0, vertical: 9.81, lateral: 0.1, longitudinal: -0.2, x: 0.1, y: -0.2, z: 9.81 },
     { t: 0.01, vertical: 9.9, lateral: 0.2, longitudinal: -0.1, x: 0.2, y: -0.1, z: 9.9 },
@@ -51,7 +51,7 @@ test('processed exports follow the space-domain grid', () => {
   const processed = {
     spaceDomain: {
       distance: [0, 0.25],
-      kp: [12, 12.00025],
+      mileage: [12, 12.00016],
       channels: { vertical: [0, 1], lateral: [0, 0], longitudinal: [0, 0] },
       lat: [48, 48],
       lon: [2, 2],
@@ -62,7 +62,7 @@ test('processed exports follow the space-domain grid', () => {
         level: 'intervention',
         value: 2.6,
         limit: 2.5,
-        kp: 12.0005,
+        mileage: 12.0003,
         distance: 0.5,
         lengthM: 0.5,
         lat: 48,
@@ -86,6 +86,6 @@ test('summarise reports the effective sampling rate', () => {
 
 test('filePrefix builds a file-system safe name', () => {
   const prefix = filePrefix(summarise(run));
-  assert.equal(prefix, 'line830000-track1-2025-04-01T08-00-00-000Z');
-  assert.ok(!/[:.]/.test(prefix.replace(/^line/, '')));
+  assert.equal(prefix, 'elrECM1-track1100-2025-04-01T08-00-00-000Z');
+  assert.ok(!/[:.]/.test(prefix.replace(/^elr/, '')));
 });

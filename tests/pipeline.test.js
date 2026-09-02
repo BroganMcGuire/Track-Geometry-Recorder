@@ -6,7 +6,7 @@ import { detectThresholds } from '../src/processing/thresholds.js';
 import {
   cumulativeDistance,
   estimateSpeed,
-  toKilometricPoint,
+  toMileage,
 } from '../src/processing/localisation.js';
 
 /**
@@ -80,15 +80,15 @@ test('the space domain uses a 0.25 m step and covers the whole run', () => {
   assert.ok(Math.abs(d[d.length - 1] - 1000) < 20, `length ${d[d.length - 1]}`);
 });
 
-test('a defect is detected and located at the right kilometric point', () => {
+test('a defect is detected and located at the right mileage', () => {
   const run = syntheticRun({ durationS: 60, speedMs: 25, defectAtS: 30 });
-  const result = processRun(run, { initialKpKm: 100 });
+  const result = processRun(run, { initialMileageMi: 100 });
   const vertical = result.events.filter((e) => e.channel === 'vertical');
   assert.ok(vertical.length >= 1, 'the vertical defect was not detected');
   const worst = vertical.reduce((a, b) => (Math.abs(b.value) > Math.abs(a.value) ? b : a));
-  // 30 s at 25 m/s = 750 m after the start, i.e. PK 100.750.
+  // 30 s at 25 m/s = 750 m after the start, i.e. mile 100.466.
   assert.ok(Math.abs(worst.distance - 750) < 15, `located at ${worst.distance} m`);
-  assert.ok(Math.abs(worst.kp - 100.75) < 0.015, `PK ${worst.kp}`);
+  assert.ok(Math.abs(worst.mileage - 100.466) < 0.01, `mileage ${worst.mileage}`);
   assert.ok(worst.lat !== null);
   assert.equal(typeof worst.level, 'string');
 });
@@ -99,9 +99,9 @@ test('a quiet run raises no threshold event', () => {
   assert.equal(result.events.length, 0);
 });
 
-test('the kilometric point can decrease along the run', () => {
-  const kp = toKilometricPoint([0, 500, 1000], 100, -1);
-  assert.deepEqual(kp, [100, 99.5, 99]);
+test('the mileage can decrease along the run', () => {
+  const mileage = toMileage([0, 1609.344, 3218.688], 100, -1);
+  assert.deepEqual(mileage, [100, 99, 98]);
 });
 
 test('the speed is interpolated inside short GNSS gaps', () => {
@@ -155,7 +155,7 @@ test('detectThresholds reports one event per exceedance with its peak', () => {
       vertical: [0, 2.2, 3.4, 0.1, 0, 0],
       lateral: [0, 0, 0, 0, 0, 0],
     },
-    kp: [10, 10.00025, 10.0005, 10.00075, 10.001, 10.00125],
+    mileage: [10, 10.00016, 10.00031, 10.00047, 10.00062, 10.00078],
     lat: [48, 48, 48, 48, 48, 48],
     lon: [2, 2, 2, 2, 2, 2],
   };
@@ -184,7 +184,7 @@ test('toSpaceDomain degrades gracefully on a run shorter than one step', () => {
     vertical: [0, 0],
     lateral: [0, 0],
     longitudinal: [0, 0],
-    kp: [1, 1],
+    mileage: [1, 1],
     lat: [48, 48],
     lon: [2, 2],
     speed: [1, 1],
@@ -201,5 +201,5 @@ test('statistics report RMS, C95 and speed', () => {
   const result = processRun(syntheticRun({ durationS: 20, defectAtS: 999 }));
   assert.ok(result.statistics.vertical.rms > 0);
   assert.ok(result.statistics.vertical.c95 > 0);
-  assert.ok(Math.abs(result.statistics.speed.meanKmh - 90) < 1);
+  assert.ok(Math.abs(result.statistics.speed.meanMph - 55.9) < 1);
 });
