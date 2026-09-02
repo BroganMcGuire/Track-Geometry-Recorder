@@ -29,7 +29,7 @@ export const DEFAULT_THRESHOLDS = [
  * @property {number} value signed peak value in m/s²
  * @property {number} limit limit that was exceeded
  * @property {number} distance curvilinear distance of the peak in metres
- * @property {number|null} kp kilometric point of the peak
+ * @property {number|null} mileage mileage of the peak, in miles
  * @property {number|null} lat latitude of the peak
  * @property {number|null} lon longitude of the peak
  * @property {number} lengthM length of the exceedance in metres
@@ -42,7 +42,7 @@ export const DEFAULT_THRESHOLDS = [
  * @param {Object} spaceDomain result of `toSpaceDomain`
  * @param {number[]} spaceDomain.distance distance grid in metres
  * @param {Object<string, number[]>} spaceDomain.channels filtered channels
- * @param {Array<number|null>} [spaceDomain.kp] kilometric point per sample
+ * @param {Array<number|null>} [spaceDomain.mileage] mileage per sample, in miles
  * @param {Array<number|null>} [spaceDomain.lat]
  * @param {Array<number|null>} [spaceDomain.lon]
  * @param {Object} [options]
@@ -104,7 +104,7 @@ function buildEvent(open, endIndex, channel, limitKey, levels, spaceDomain) {
     value: open.peak,
     limit: level[limitKey],
     distance: distance[i],
-    kp: spaceDomain.kp ? spaceDomain.kp[i] : null,
+    mileage: spaceDomain.mileage ? spaceDomain.mileage[i] : null,
     lat: spaceDomain.lat ? spaceDomain.lat[i] : null,
     lon: spaceDomain.lon ? spaceDomain.lon[i] : null,
     lengthM: (endIndex - open.start + 1) * step,

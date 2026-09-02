@@ -2,6 +2,7 @@ import { Recorder } from './recorder.js';
 import { StripChart } from './ui/chart.js';
 import { deleteRun, listRuns, loadRun, saveRun, summarise } from './storage.js';
 import { processRun } from './processing/pipeline.js';
+import { metresToMiles } from './processing/localisation.js';
 import {
   accelerationCsv,
   download,
@@ -17,6 +18,9 @@ import {
  * described in the report (§2.2) to the recorder, the storage and the
  * post-processing pipeline.
  */
+
+/** Conversion from metres per second to miles per hour. */
+const MPS_TO_MPH = 3600 / 1609.344;
 
 const screens = {
   setup: document.getElementById('screen-setup'),
@@ -107,10 +111,10 @@ document.getElementById('journey-form').addEventListener('submit', async (event)
   }
 
   state.meta = {
-    line: data.line,
+    elr: data.elr,
     track: data.track,
-    initialKpKm: Number(data.initialKpKm) || 0,
-    kpDirection: Number(data.kpDirection) || 1,
+    initialMileageMi: Number(data.initialMileageMi) || 0,
+    mileageDirection: Number(data.mileageDirection) || 1,
     trainType: data.trainType,
     position: data.position,
     axes,
@@ -155,19 +159,21 @@ function onAcceleration(sample) {
 
 function onPosition(fix) {
   state.lastFix = fix;
-  const speedKmh = typeof fix.speed === 'number' ? fix.speed * 3.6 : null;
+  const speedMph = typeof fix.speed === 'number' ? fix.speed * MPS_TO_MPH : null;
   document.getElementById('readout-speed').textContent =
-    speedKmh === null ? '–' : speedKmh.toFixed(0);
+    speedMph === null ? '–' : speedMph.toFixed(0);
   document.getElementById('position-line').textContent =
     `${fix.lat.toFixed(5)}, ${fix.lon.toFixed(5)}` +
     (fix.accuracy ? ` (±${fix.accuracy.toFixed(0)} m)` : '');
 
   if (state.meta && typeof fix.speed === 'number') {
-    // Rough live kilometric point: the exact value is recomputed during
-    // post-processing from the filtered and resampled data.
+    // Rough live mileage: the exact value is recomputed during post-processing
+    // from the filtered and resampled data.
     const elapsed = fix.t;
-    const kp = state.meta.initialKpKm + (state.meta.kpDirection * fix.speed * elapsed) / 1000;
-    document.getElementById('readout-kp').textContent = kp.toFixed(3);
+    const mileage =
+      state.meta.initialMileageMi +
+      state.meta.mileageDirection * metresToMiles(fix.speed * elapsed);
+    document.getElementById('readout-mileage').textContent = mileage.toFixed(3);
   }
 }
 
@@ -235,7 +241,7 @@ async function refreshRunList() {
       li.dataset.id = id;
       li.setAttribute('aria-selected', String(id === state.selectedRunId));
       const title = document.createElement('strong');
-      title.textContent = `Line ${summary.line || '?'} – track ${summary.track || '?'}`;
+      title.textContent = `ELR ${summary.elr || '?'} – track ${summary.track || '?'}`;
       const meta = document.createElement('span');
       meta.className = 'meta';
       meta.textContent =
@@ -275,8 +281,8 @@ document.getElementById('processing-form').addEventListener('submit', (event) =>
       filterLowHz: Number(data.filterLowHz),
       filterHighHz: Number(data.filterHighHz),
       spatialStepM: Number(data.spatialStepM),
-      initialKpKm: Number(meta.initialKpKm) || 0,
-      kpDirection: Number(meta.kpDirection) || 1,
+      initialMileageMi: Number(meta.initialMileageMi) || 0,
+      mileageDirection: Number(meta.mileageDirection) || 1,
     });
   } catch (error) {
     container.replaceChildren(
@@ -295,8 +301,8 @@ function renderResult(container, processed) {
   const summary = document.createElement('p');
   summary.className = 'hint';
   summary.textContent =
-    `${(stats.distanceM / 1000).toFixed(3)} km in ${stats.durationS.toFixed(0)} s · ` +
-    `mean ${stats.speed.meanKmh.toFixed(0)} km/h · max ${stats.speed.maxKmh.toFixed(0)} km/h`;
+    `${stats.distanceMi.toFixed(3)} miles in ${stats.durationS.toFixed(0)} s · ` +
+    `mean ${stats.speed.meanMph.toFixed(0)} mph · max ${stats.speed.maxMph.toFixed(0)} mph`;
 
   const statsTable = buildTable(
     ['Channel', 'RMS', 'C95', 'Min', 'Max'],
@@ -312,11 +318,11 @@ function renderResult(container, processed) {
   const eventsTitle = document.createElement('h2');
   eventsTitle.textContent = `Exceeded thresholds (${processed.events.length})`;
   const eventsTable = buildTable(
-    ['PK', 'Channel', 'Level', 'Value', 'Length'],
+    ['Mileage', 'Channel', 'Level', 'Value', 'Length'],
     processed.events
       .slice(0, 100)
       .map((e) => [
-        e.kp === null ? '–' : e.kp.toFixed(3),
+        e.mileage === null ? '–' : e.mileage.toFixed(3),
         e.channel,
         e.level,
         `${e.value.toFixed(2)} m/s²`,
