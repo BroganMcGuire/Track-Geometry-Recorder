@@ -24,13 +24,16 @@
         <form id="journey-form" class="card">
           <h2>Journey</h2>
           <label>ELR
-            <input name="elr" required placeholder="e.g. ECM1" />
+            <input name="elr" list="elr-list" required placeholder="e.g. ECM1" />
           </label>
-          <label>Track
-            <input name="track" placeholder="e.g. 1100" />
+          <datalist id="elr-list"></datalist>
+          <label>Track (TRID)
+            <input name="track" list="track-list" placeholder="e.g. 1100" />
           </label>
-          <label>Initial mileage (miles)
-            <input name="initialMileageMi" type="number" step="0.001" value="0" />
+          <datalist id="track-list"></datalist>
+          <label>Initial mileage
+            <input name="initialMileage" type="text" inputmode="decimal" value="0"
+                   placeholder="decimal miles, or 326m 0638y" />
           </label>
           <label>Direction of the mileage
             <select name="mileageDirection">
@@ -38,6 +41,11 @@
               <option value="-1">decreasing</option>
             </select>
           </label>
+          <button type="button" id="locate-button">Locate me on the network</button>
+          <p id="network-status" class="hint">
+            ELR, track IDs and mileages come from the Network Rail network model
+            (openraildata/network-rail-gis, Open Government Licence v3.0).
+          </p>
           <label>Train type
             <input name="trainType" placeholder="e.g. TGV, regional, freight" />
           </label>
@@ -86,7 +94,7 @@
       <section id="screen-measure" class="screen" hidden>
         <div class="card readouts">
           <div><span class="value" id="readout-speed">–</span><span class="unit">mph</span></div>
-          <div><span class="value" id="readout-mileage">–</span><span class="unit">miles</span></div>
+          <div><span class="value" id="readout-mileage">–</span><span class="unit" id="readout-mileage-unit">miles</span></div>
           <div><span class="value" id="readout-rate">–</span><span class="unit">Hz</span></div>
           <div><span class="value" id="readout-duration">0:00</span><span class="unit">elapsed</span></div>
         </div>
@@ -99,6 +107,7 @@
 
         <div class="card">
           <p id="position-line" class="hint">Waiting for a GNSS fix…</p>
+          <p id="network-line" class="hint"></p>
           <div class="markers">
             <button type="button" data-marker="switch">Switch</button>
             <button type="button" data-marker="bridge">Bridge</button>

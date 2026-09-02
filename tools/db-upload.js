@@ -11,11 +11,26 @@
  */
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { summarise } from '../src/storage.js';
 import { processRun } from '../src/processing/pipeline.js';
+import { NetworkModel } from '../src/processing/network-model.js';
 import { withClient } from './db.js';
+
+/**
+ * Load the network model reference file, when it has been built.
+ *
+ * @returns {Promise<NetworkModel|null>}
+ */
+export async function loadLocalNetworkModel() {
+  const path = fileURLToPath(new URL('../data/network-model.json', import.meta.url));
+  try {
+    return new NetworkModel(JSON.parse(await readFile(path, 'utf8')));
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Build the `runs` row for a raw recording.
@@ -53,9 +68,10 @@ export function runRow(run, id) {
  * @param {import('pg').Client} client
  * @param {Object} run raw run as exported by the app
  * @param {string} [id]
+ * @param {import('../src/processing/network-model.js').NetworkModel} [network]
  * @returns {Promise<string>} the identifier of the stored run
  */
-export async function uploadRun(client, run, id) {
+export async function uploadRun(client, run, id, network = null) {
   const row = runRow(run, id);
   await client.query('begin');
   try {
@@ -101,13 +117,16 @@ export async function uploadRun(client, run, id) {
       ],
     );
     await client.query('delete from threshold_events where run_id = $1', [row.id]);
-    for (const event of thresholdEvents(run)) {
+    for (const event of thresholdEvents(run, network)) {
       await client.query(
-        `insert into threshold_events (run_id, channel, level, value_ms2, limit_ms2,
-                                       mileage_mi, distance_m, length_m, latitude, longitude)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        `insert into threshold_events (run_id, elr, track, channel, level, value_ms2,
+                                       limit_ms2, mileage_mi, distance_m, length_m,
+                                       latitude, longitude)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
         [
           row.id,
+          event.elr ?? row.elr ?? null,
+          event.track ?? row.track ?? null,
           event.channel,
           event.level,
           event.value,
@@ -133,14 +152,19 @@ export async function uploadRun(client, run, id) {
  * to be processed is uploaded without any event.
  *
  * @param {Object} run
+ * @param {import('../src/processing/network-model.js').NetworkModel} [network]
+ *        network model used to read the ELR, track and mileage from the fixes
  * @returns {Array<Object>}
  */
-export function thresholdEvents(run) {
+export function thresholdEvents(run, network = null) {
   const meta = run.meta ?? {};
   try {
     return processRun(run, {
       initialMileageMi: Number(meta.initialMileageMi) || 0,
       mileageDirection: Number(meta.mileageDirection) || 1,
+      elr: meta.elr || null,
+      track: meta.track || null,
+      network: network ?? null,
     }).events;
   } catch {
     return [];
@@ -154,10 +178,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.stderr.write('Usage: node tools/db-upload.js <run-raw.json> […]\n');
     process.exitCode = 1;
   } else {
+    const network = await loadLocalNetworkModel();
     await withClient(async (client) => {
       for (const file of files) {
         const run = JSON.parse(await readFile(file, 'utf8'));
-        const id = await uploadRun(client, run, basename(file, '.json'));
+        const id = await uploadRun(client, run, basename(file, '.json'), network);
         process.stdout.write(`Uploaded ${file} as ${id}\n`);
       }
     });

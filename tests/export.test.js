@@ -49,6 +49,7 @@ test('empty and missing values become empty cells', () => {
 
 test('processed exports follow the space-domain grid', () => {
   const processed = {
+    location: { elr: 'ECM1', track: '1100' },
     spaceDomain: {
       distance: [0, 0.25],
       mileage: [12, 12.00016],
@@ -70,10 +71,14 @@ test('processed exports follow the space-domain grid', () => {
       },
     ],
   };
-  assert.equal(spaceDomainCsv(processed).trim().split('\n').length, 3);
+  const space = spaceDomainCsv(processed).trim().split('\n');
+  assert.equal(space.length, 3);
+  // The ELR, the track and the mileage written as on the network.
+  assert.ok(space[1].startsWith('0,ECM1,1100,12,12m 0000y'));
   const events = eventsCsv(processed).trim().split('\n');
   assert.equal(events.length, 2);
-  assert.ok(events[1].startsWith('vertical,intervention,2.6,2.5'));
+  assert.ok(events[1].startsWith('ECM1,1100,vertical,intervention,2.6,2.5'));
+  assert.ok(events[1].includes('12m 0001y'));
 });
 
 test('summarise reports the effective sampling rate', () => {

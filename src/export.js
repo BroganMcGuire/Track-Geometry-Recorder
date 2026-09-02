@@ -7,6 +7,8 @@
  * functions so that they can be reused and tested outside of the browser.
  */
 
+import { formatMileage } from './processing/mileage.js';
+
 function escapeCell(value) {
   if (value === null || value === undefined) return '';
   const text = String(value);
@@ -23,6 +25,11 @@ export function toCsv(header, rows) {
   const lines = [header.join(',')];
   for (const row of rows) lines.push(row.map(escapeCell).join(','));
   return lines.join('\n') + '\n';
+}
+
+/** Mileage written the way it is on the network, e.g. `326m 0638y`. */
+function mileageCell(miles) {
+  return typeof miles === 'number' && Number.isFinite(miles) ? formatMileage(miles) : '';
 }
 
 function round(value, digits = 6) {
@@ -89,9 +96,13 @@ export function markersCsv(run) {
  */
 export function spaceDomainCsv(processed) {
   const { distance, channels, mileage, lat, lon } = processed.spaceDomain;
+  const location = processed.location ?? {};
   const rows = distance.map((d, i) => [
     round(d, 3),
+    location.elr ?? '',
+    location.track ?? '',
     round(mileage?.[i], 6),
+    mileageCell(mileage?.[i]),
     round(channels.vertical[i]),
     round(channels.lateral[i]),
     round(channels.longitudinal[i]),
@@ -99,7 +110,18 @@ export function spaceDomainCsv(processed) {
     round(lon?.[i], 8),
   ]);
   return toCsv(
-    ['distance_m', 'mileage_mi', 'avc_ms2', 'atc_ms2', 'alc_ms2', 'latitude', 'longitude'],
+    [
+      'distance_m',
+      'elr',
+      'track',
+      'mileage_mi',
+      'mileage_m_y',
+      'avc_ms2',
+      'atc_ms2',
+      'alc_ms2',
+      'latitude',
+      'longitude',
+    ],
     rows,
   );
 }
@@ -110,14 +132,31 @@ export function spaceDomainCsv(processed) {
  * @returns {string}
  */
 export function eventsCsv(processed) {
+  const location = processed.location ?? {};
   return toCsv(
-    ['channel', 'level', 'value_ms2', 'limit_ms2', 'mileage_mi', 'distance_m', 'length_m', 'latitude', 'longitude'],
+    [
+      'elr',
+      'track',
+      'channel',
+      'level',
+      'value_ms2',
+      'limit_ms2',
+      'mileage_mi',
+      'mileage_m_y',
+      'distance_m',
+      'length_m',
+      'latitude',
+      'longitude',
+    ],
     processed.events.map((e) => [
+      e.elr ?? location.elr ?? '',
+      e.track ?? location.track ?? '',
       e.channel,
       e.level,
       round(e.value, 3),
       round(e.limit, 3),
       round(e.mileage, 6),
+      mileageCell(e.mileage),
       round(e.distance, 2),
       round(e.lengthM, 2),
       round(e.lat, 8),

@@ -32,6 +32,8 @@ create index if not exists runs_started_at_idx on runs (started_at desc);
 create table if not exists threshold_events (
   id          bigserial primary key,
   run_id      text not null references runs (id) on delete cascade,
+  elr         text,
+  track       text,
   channel     text not null,
   level       text not null,
   value_ms2   double precision not null,
@@ -43,5 +45,10 @@ create table if not exists threshold_events (
   longitude   double precision
 );
 
+-- Added with the ELR/track/mileage support: keep older databases up to date.
+alter table threshold_events add column if not exists elr text;
+alter table threshold_events add column if not exists track text;
+
 create index if not exists threshold_events_run_idx on threshold_events (run_id);
 create index if not exists threshold_events_mileage_idx on threshold_events (mileage_mi);
+create index if not exists threshold_events_elr_idx on threshold_events (elr, track, mileage_mi);
