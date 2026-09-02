@@ -194,3 +194,7 @@ tests/                         unit tests (node --test)
 - The speed estimation methods based on the harmonic content of axle box signals
   (§4.2) and on two measurement points (§4.3) are not implemented; they require
   sensors outside the carbody.
+- A run is anchored to a single ELR and a single mileage direction; a run that
+  crosses an ELR boundary or reverses keeps carrying the mileage of the ELR it
+  started on. The deviation between the carried mileage and the located fixes is
+  reported with the result, and a drift of more than 100 m is flagged.

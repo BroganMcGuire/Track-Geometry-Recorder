@@ -12,6 +12,7 @@ import {
   metresToMiles,
   toMileage,
 } from './localisation.js';
+import { mileageDistanceM } from './mileage.js';
 import { DEFAULT_MAX_DISTANCE_M, mileageFromAnchor } from './network-model.js';
 import { detectThresholds, DEFAULT_THRESHOLDS } from './thresholds.js';
 
@@ -173,6 +174,7 @@ export function processRun(run, userOptions = {}) {
       source: location.source,
       initialMileageMi: mileage[0],
       mileageDirection: location.mileageDirection,
+      residualM: location.residualM,
       anchor: location.anchor,
     },
     timeDomain,
@@ -197,7 +199,7 @@ export function processRun(run, userOptions = {}) {
  * @param {number[]} distance curvilinear distance in metres
  * @param {import('./localisation.js').GnssSample[]} gnss GNSS fixes
  * @param {typeof DEFAULT_OPTIONS} options
- * @returns {{mileage:number[], elr:string|null, track:string|null, tracks:string[], source:string, mileageDirection:number, anchor:Object|null}}
+ * @returns {{mileage:number[], elr:string|null, track:string|null, tracks:string[], source:string, mileageDirection:number, residualM:number|null, anchor:Object|null}}
  */
 function locateRun(times, distance, gnss, options) {
   const anchor = options.network
@@ -205,19 +207,23 @@ function locateRun(times, distance, gnss, options) {
     : null;
 
   if (anchor) {
+    // The direction is only read from the model when the run actually moved.
+    const mileageDirection = anchor.mileageDirection ?? options.mileageDirection;
     const anchorDistance = interpolateAt(times, distance, [anchor.t])[0] ?? 0;
     const mileage = distance.map((d) =>
-      mileageFromAnchor(anchor.mileage, d - anchorDistance, anchor.mileageDirection),
+      mileageFromAnchor(anchor.mileage, d - anchorDistance, mileageDirection),
     );
+    // The track entered on the start screen wins, as long as the model knows it
+    // at that mileage; the guess is only made when a single track matches.
+    const known = options.track && anchor.tracks.includes(options.track);
     return {
       mileage,
       elr: anchor.elr,
-      // The mileage cannot tell parallel tracks apart, so the track entered on
-      // the start screen wins and is only guessed when a single one matches.
-      track: options.track ?? (anchor.tracks.length === 1 ? anchor.tracks[0] : null),
+      track: known ? options.track : anchor.tracks.length === 1 ? anchor.tracks[0] : null,
       tracks: anchor.tracks,
       source: 'network-model',
-      mileageDirection: anchor.mileageDirection,
+      mileageDirection,
+      residualM: anchorResidualM(times, mileage, anchor),
       anchor,
     };
   }
@@ -229,8 +235,35 @@ function locateRun(times, distance, gnss, options) {
     tracks: [],
     source: 'journey-information',
     mileageDirection: options.mileageDirection,
+    residualM: null,
     anchor: null,
   };
+}
+
+/**
+ * How far the anchored mileage drifts from the mileages the model gives for the
+ * located fixes, in metres.
+ *
+ * The mileage of the run is carried from a single anchor, which assumes that
+ * the whole recording stays on one ELR and runs in one direction. A run that
+ * crosses onto another ELR, or that reverses, drifts away from the model; the
+ * residual is reported so that such a run can be spotted and split.
+ *
+ * @param {number[]} times timestamps in seconds
+ * @param {number[]} mileage anchored mileage per sample
+ * @param {Object} anchor result of `NetworkModel.anchor`
+ * @returns {number|null} largest deviation in metres, null without located fixes
+ */
+function anchorResidualM(times, mileage, anchor) {
+  const points = anchor.points ?? [];
+  if (points.length === 0) return null;
+  const expected = interpolateAt(times, mileage, points.map((p) => p.t));
+  let worst = 0;
+  for (let i = 0; i < points.length; i++) {
+    if (expected[i] === null) continue;
+    worst = Math.max(worst, Math.abs(mileageDistanceM(points[i].mileage, expected[i])));
+  }
+  return worst;
 }
 
 /**

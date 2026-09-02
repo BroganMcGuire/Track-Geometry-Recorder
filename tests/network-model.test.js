@@ -149,14 +149,32 @@ test('a missing reference file leaves the application without a model', async ()
 test('consecutive links of a track are merged into one mileage range', () => {
   const merged = mergeTracks([
     ['1100', 0, 0.088],
-    ['1100', 0.088, 0.176],
+    ['1100', 0.088, 0.132],
+    // A separate stretch of the same track, a mile further on.
     ['1100', 1.0, 1.088],
     ['1200', 0, 0.044],
   ]);
   assert.deepEqual(merged, [
-    ['1100', 0, 0.176],
+    ['1100', 0, 0.132],
     ['1200', 0, 0.044],
     ['1100', 1.0, 1.088],
+  ]);
+});
+
+test('mileages are merged across a mile boundary, not as decimals', () => {
+  // 3 miles 1750 yards and 4 miles 10 yards are 20 yards apart, even though the
+  // numbers 3.175 and 4.001 are not; and 1 mile 100 yards is a mile after mile
+  // 1, although 1.01 and 1.0 look adjacent.
+  const merged = mergeTracks([
+    ['1100', 3.175, 3.1759],
+    ['1100', 4.001, 4.0088],
+    ['2100', 1.0, 1.0044],
+    ['2100', 2.0, 2.0044],
+  ]);
+  assert.deepEqual(merged, [
+    ['2100', 1.0, 1.0044],
+    ['2100', 2.0, 2.0044],
+    ['1100', 3.175, 4.0088],
   ]);
 });
 

@@ -404,7 +404,13 @@ function renderResult(container, processed) {
     `mileage ${location.mileageDirection < 0 ? 'decreasing' : 'increasing'} · ` +
     (location.source === 'network-model'
       ? 'located on the Network Rail network model'
-      : 'from the journey information');
+      : 'from the journey information') +
+    // A large residual means the run left the ELR it was anchored to, so the
+    // mileages further along the run are only as good as the distance travelled.
+    (location.residualM > 100
+      ? ` · mileage drifts by up to ${location.residualM.toFixed(0)} m, ` +
+        'the run may cross more than one ELR'
+      : '');
 
   const statsTable = buildTable(
     ['Channel', 'RMS', 'C95', 'Min', 'Max'],

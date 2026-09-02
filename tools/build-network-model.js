@@ -33,6 +33,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { milesAndYardsToMiles } from '../src/processing/mileage.js';
 import { osgb36ToWgs84, readDbf, readShp } from './shapefile.js';
 
 const ATTRIBUTION =
@@ -143,20 +144,29 @@ export function mergeTracks(links) {
   }
   const out = [];
   for (const [trid, ranges] of byTrid) {
-    ranges.sort((a, b) => a[0] - b[0]);
+    // The mileages are written in miles and yards, which cannot be compared or
+    // added directly across a mile boundary; the merging is done in miles.
+    const sorted = ranges
+      .map(([from, to]) => ({ from, to, fromMi: milesAndYardsToMiles(from), toMi: milesAndYardsToMiles(to) }))
+      .sort((a, b) => a.fromMi - b.fromMi);
     let current = null;
-    for (const [from, to] of ranges) {
-      // The mileages are in miles and yards; a tenth of a mile of tolerance
-      // bridges the gaps between two links of the same track.
-      if (current && from <= current[2] + 0.02) {
-        current[2] = Math.max(current[2], to);
+    for (const range of sorted) {
+      // A hundred yards of tolerance bridges the gap between two links of the
+      // same track.
+      if (current && range.fromMi <= current.toMi + 100 / 1760) {
+        if (range.toMi > current.toMi) {
+          current.toMi = range.toMi;
+          current.entry[2] = range.to;
+        }
         continue;
       }
-      current = [trid, from, to];
+      current = { fromMi: range.fromMi, toMi: range.toMi, entry: [trid, range.from, range.to] };
       out.push(current);
     }
   }
-  return out.sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]));
+  return out
+    .sort((a, b) => a.fromMi - b.fromMi || a.entry[0].localeCompare(b.entry[0]))
+    .map((range) => range.entry);
 }
 
 /**

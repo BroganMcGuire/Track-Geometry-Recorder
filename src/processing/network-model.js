@@ -28,6 +28,12 @@ import { milesAndYardsToMiles, METRES_PER_MILE } from './mileage.js';
 /** Size of a cell of the lookup grid, in degrees of latitude (about 1.1 km). */
 const CELL_DEGREES = 0.01;
 
+/**
+ * Distance a run must cover before the direction of its mileage can be read
+ * from the model, in metres.
+ */
+const MINIMUM_TRAVEL_M = 50;
+
 /** Default distance beyond which a fix is not considered to be on a line. */
 export const DEFAULT_MAX_DISTANCE_M = 250;
 
@@ -132,10 +138,17 @@ export class NetworkModel {
       if (!best || direct < best.distanceM) {
         best = { elr, mileage: waymarks[index].mileage, distanceM: direct };
       }
-      // Interpolate along the two segments the waymark belongs to.
+      // Interpolate along the two segments the waymark belongs to. The
+      // waymarks of an ELR are ordered by mileage, which is not always the
+      // order along the ground: the model has gaps, and joining two waymarks
+      // across one would invent a line that does not exist. A segment is only
+      // used when its length on the ground matches the mileage it covers.
       for (const neighbour of [index - 1, index + 1]) {
         if (neighbour < 0 || neighbour >= waymarks.length) continue;
         const other = projection(waymarks[neighbour].lat, waymarks[neighbour].lon);
+        if (!isPlausibleSegment(point, other, waymarks[index].mileage, waymarks[neighbour].mileage)) {
+          continue;
+        }
         const projected = projectOnSegment(point, other);
         if (projected === null) continue;
         const mileage =
@@ -199,7 +212,12 @@ export class NetworkModel {
     onElr.sort((a, b) => a.t - b.t);
     const first = onElr[0];
     const last = onElr[onElr.length - 1];
-    const mileageDirection = last.mileage < first.mileage ? -1 : 1;
+    // The direction is only meaningful once the train has moved; a run that
+    // stayed at the same mileage (or a single located fix) leaves it undecided
+    // and the direction of the start screen is kept.
+    const travelled = (last.mileage - first.mileage) * METRES_PER_MILE;
+    const mileageDirection =
+      Math.abs(travelled) < MINIMUM_TRAVEL_M ? null : Math.sign(travelled);
     // A run stays on the same track, so the candidates are the tracks present
     // at every located fix; at a junction that intersection can be empty and
     // the tracks of the first fix are used instead.
@@ -217,6 +235,10 @@ export class NetworkModel {
       tracks,
       located: onElr.length,
       fixes: samples.length,
+      // Mileages of the located fixes, so that the caller can check how well
+      // the anchored mileage follows the model (a run that changes ELR or that
+      // reverses drifts away from it).
+      points: onElr.map((p) => ({ t: p.t, mileage: p.mileage })),
     };
   }
 
@@ -302,6 +324,27 @@ function localProjection(lat0, lon0) {
     x: (lon - lon0) * METRES_PER_DEGREE_LAT * cos,
     y: (lat - lat0) * METRES_PER_DEGREE_LAT,
   });
+}
+
+/**
+ * Is the segment between two consecutive waymarks a real piece of line?
+ *
+ * Two waymarks that follow each other in mileage are only a few hundred metres
+ * apart on the ground; a much longer segment is a gap in the model (an ELR
+ * covered in several pieces) and must not be interpolated across.
+ *
+ * @param {{x:number, y:number}} a first waymark, in local metres
+ * @param {{x:number, y:number}} b second waymark, in local metres
+ * @param {number} mileageA mileage of the first waymark
+ * @param {number} mileageB mileage of the second waymark
+ * @returns {boolean}
+ */
+function isPlausibleSegment(a, b, mileageA, mileageB) {
+  const onTheGround = Math.hypot(b.x - a.x, b.y - a.y);
+  const alongTheLine = Math.abs(mileageB - mileageA) * METRES_PER_MILE;
+  // The straight line between two waymarks is shorter than the track that joins
+  // them, never longer; a generous margin absorbs the accuracy of the model.
+  return onTheGround <= alongTheLine + 100;
 }
 
 /**

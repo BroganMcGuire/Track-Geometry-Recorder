@@ -37,19 +37,24 @@ export async function loadLocalNetworkModel() {
  *
  * @param {Object} run raw run as exported by the app
  * @param {string} [id] identifier to use; defaults to the start timestamp
+ * @param {Object} [location] `location` block of the processed run, so that the
+ *        run and its events are stored with the same ELR, track and mileage
  * @returns {Object}
  */
-export function runRow(run, id) {
+export function runRow(run, id, location = null) {
   const summary = summarise(run);
   const meta = run.meta ?? {};
+  const fromNetwork = location?.source === 'network-model' ? location : null;
   return {
     id: id ?? summary.startedAt,
-    elr: meta.elr ?? '',
-    track: meta.track ?? null,
+    elr: fromNetwork?.elr ?? meta.elr ?? '',
+    track: fromNetwork?.track ?? meta.track ?? null,
     train_type: meta.trainType ?? null,
     position_in_train: meta.position ?? null,
-    initial_mileage_mi: Number(meta.initialMileageMi) || 0,
-    mileage_direction: Number(meta.mileageDirection) || 1,
+    initial_mileage_mi: fromNetwork
+      ? fromNetwork.initialMileageMi
+      : Number(meta.initialMileageMi) || 0,
+    mileage_direction: fromNetwork?.mileageDirection ?? (Number(meta.mileageDirection) || 1),
     started_at: summary.startedAt,
     duration_s: summary.durationS,
     samples: summary.samples,
@@ -72,7 +77,10 @@ export function runRow(run, id) {
  * @returns {Promise<string>} the identifier of the stored run
  */
 export async function uploadRun(client, run, id, network = null) {
-  const row = runRow(run, id);
+  // The run is post-processed once, so that the journey information stored with
+  // it and the events cannot contradict each other.
+  const processed = processForUpload(run, network);
+  const row = runRow(run, id, processed.location);
   await client.query('begin');
   try {
     await client.query(
@@ -117,7 +125,7 @@ export async function uploadRun(client, run, id, network = null) {
       ],
     );
     await client.query('delete from threshold_events where run_id = $1', [row.id]);
-    for (const event of thresholdEvents(run, network)) {
+    for (const event of processed.events) {
       await client.query(
         `insert into threshold_events (run_id, elr, track, channel, level, value_ms2,
                                        limit_ms2, mileage_mi, distance_m, length_m,
@@ -148,27 +156,39 @@ export async function uploadRun(client, run, id, network = null) {
 }
 
 /**
- * Post-process a run to obtain its exceeded thresholds; a run that is too short
- * to be processed is uploaded without any event.
+ * Post-process a run; a run that is too short to be processed is uploaded
+ * without any event and keeps the journey information it was recorded with.
  *
  * @param {Object} run
  * @param {import('../src/processing/network-model.js').NetworkModel} [network]
  *        network model used to read the ELR, track and mileage from the fixes
- * @returns {Array<Object>}
+ * @returns {{events: Array<Object>, location: Object|null}}
  */
-export function thresholdEvents(run, network = null) {
+export function processForUpload(run, network = null) {
   const meta = run.meta ?? {};
   try {
-    return processRun(run, {
+    const processed = processRun(run, {
       initialMileageMi: Number(meta.initialMileageMi) || 0,
       mileageDirection: Number(meta.mileageDirection) || 1,
       elr: meta.elr || null,
       track: meta.track || null,
       network: network ?? null,
-    }).events;
+    });
+    return { events: processed.events, location: processed.location ?? null };
   } catch {
-    return [];
+    return { events: [], location: null };
   }
+}
+
+/**
+ * Exceeded thresholds of a run.
+ *
+ * @param {Object} run
+ * @param {import('../src/processing/network-model.js').NetworkModel} [network]
+ * @returns {Array<Object>}
+ */
+export function thresholdEvents(run, network = null) {
+  return processForUpload(run, network).events;
 }
 
 // Command line entry point; the functions above stay importable for testing.
