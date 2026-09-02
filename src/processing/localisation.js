@@ -1,4 +1,5 @@
 import { haversine } from './signal.js';
+import { METRES_PER_MILE } from './mileage.js';
 
 /**
  * Speed and distance estimation (report §4 "On-track localisation").
@@ -144,8 +145,8 @@ export function cumulativeDistance(times, speed) {
   return out;
 }
 
-/** Length of a statute mile in metres. */
-export const METRES_PER_MILE = 1609.344;
+/** Length of a statute mile in metres, re-exported from the mileage module. */
+export { METRES_PER_MILE };
 
 /**
  * Convert a distance in metres into miles.

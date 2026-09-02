@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { processRun, toSpaceDomain } from '../src/processing/pipeline.js';
+import { NetworkModel } from '../src/processing/network-model.js';
 import { detectThresholds } from '../src/processing/thresholds.js';
 import {
   cumulativeDistance,
@@ -91,6 +92,50 @@ test('a defect is detected and located at the right mileage', () => {
   assert.ok(Math.abs(worst.mileage - 100.466) < 0.01, `mileage ${worst.mileage}`);
   assert.ok(worst.lat !== null);
   assert.equal(typeof worst.level, 'string');
+});
+
+test('the network model gives the ELR, the track and the mileage of a defect', () => {
+  // The synthetic run travels north along the meridian at 25 m/s from 48°N; the
+  // model places a waymark every quarter of a mile along the same line, with
+  // mile 200 at the start of the run.
+  const waymarks = [];
+  for (let i = 0; i < 12; i++) {
+    waymarks.push([Number((200 + i * 0.044).toFixed(4)), 48 + (i * 402.336) / 111320, 2]);
+  }
+  const network = new NetworkModel({
+    elrs: { TST1: { waymarks, tracks: [['1100', 200, 210]] } },
+  });
+
+  const run = syntheticRun({ durationS: 60, speedMs: 25, defectAtS: 30 });
+  const result = processRun(run, { network });
+  assert.equal(result.location.source, 'network-model');
+  assert.equal(result.location.elr, 'TST1');
+  assert.equal(result.location.track, '1100');
+  assert.equal(result.location.mileageDirection, 1);
+  assert.ok(Math.abs(result.location.initialMileageMi - 200) < 0.01);
+
+  const worst = result.events
+    .filter((e) => e.channel === 'vertical')
+    .reduce((a, b) => (Math.abs(b.value) > Math.abs(a.value) ? b : a));
+  // 750 m after the start of the run, i.e. mile 200.466 of the ELR.
+  assert.equal(worst.elr, 'TST1');
+  assert.equal(worst.track, '1100');
+  assert.ok(Math.abs(worst.mileage - 200.466) < 0.02, `mileage ${worst.mileage}`);
+});
+
+test('a run outside the network model keeps the mileage of the start screen', () => {
+  const network = new NetworkModel({
+    elrs: { TST1: { waymarks: [[0, 55, -3]], tracks: [] } },
+  });
+  const result = processRun(syntheticRun({ durationS: 20 }), {
+    network,
+    initialMileageMi: 100,
+    elr: 'ECM1',
+    track: '1100',
+  });
+  assert.equal(result.location.source, 'journey-information');
+  assert.equal(result.location.elr, 'ECM1');
+  assert.ok(Math.abs(result.location.initialMileageMi - 100) < 1e-9);
 });
 
 test('a quiet run raises no threshold event', () => {

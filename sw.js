@@ -2,7 +2,7 @@
  * Offline cache for the application shell, so that a run can be started in a
  * tunnel or without any mobile network coverage.
  */
-const CACHE = 'track-geometry-recorder-v2';
+const CACHE = 'track-geometry-recorder-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -17,6 +17,8 @@ const ASSETS = [
   './src/processing/pipeline.js',
   './src/processing/signal.js',
   './src/processing/localisation.js',
+  './src/processing/mileage.js',
+  './src/processing/network-model.js',
   './src/processing/thresholds.js',
 ];
 

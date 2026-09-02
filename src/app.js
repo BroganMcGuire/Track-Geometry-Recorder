@@ -3,6 +3,8 @@ import { StripChart } from './ui/chart.js';
 import { deleteRun, listRuns, loadRun, saveRun, summarise } from './storage.js';
 import { processRun } from './processing/pipeline.js';
 import { metresToMiles } from './processing/localisation.js';
+import { formatMileage, parseMileage } from './processing/mileage.js';
+import { loadNetworkModel } from './processing/network-model.js';
 import {
   accelerationCsv,
   download,
@@ -53,6 +55,9 @@ const state = {
   // Gravity is only removed for the live display; the stored data stays raw.
   bias: { vertical: 9.81, lateral: 0, longitudinal: 0 },
   lastFix: null,
+  // Network Rail network model (ELR, track IDs and mileages); null until the
+  // reference file has been loaded, and when it is not available at all.
+  network: null,
 };
 
 function showScreen(name) {
@@ -94,6 +99,80 @@ function describeCapabilities() {
   );
 }
 
+/* ------------------------------------------- Network Rail network model */
+
+/**
+ * Load the ELR / track ID / mileage reference file built from the Network Rail
+ * network model (`npm run network-model`). The application works without it,
+ * with the journey information typed on the start screen.
+ */
+async function initNetworkModel() {
+  const status = document.getElementById('network-status');
+  const button = document.getElementById('locate-button');
+  state.network = await loadNetworkModel();
+  if (!state.network) {
+    button.disabled = true;
+    status.textContent =
+      'Network model not installed: run `npm run network-model` to derive the ELR, ' +
+      'the track IDs and the mileages from the Network Rail data.';
+    return;
+  }
+  const elrList = document.getElementById('elr-list');
+  elrList.replaceChildren(
+    ...state.network.elrList().map((elr) => Object.assign(document.createElement('option'), {
+      value: elr,
+    })),
+  );
+  status.textContent =
+    `Network model loaded: ${state.network.elrList().length} ELRs. ` +
+    `${state.network.attribution}`;
+}
+
+/**
+ * Fill the journey information from the current position: the ELR the phone is
+ * on, the mileage at that point and the track IDs recorded there.
+ */
+document.getElementById('locate-button').addEventListener('click', () => {
+  const status = document.getElementById('network-status');
+  const error = document.getElementById('setup-error');
+  error.textContent = '';
+  if (!state.network) return;
+  if (!('geolocation' in navigator)) {
+    error.textContent = 'This device has no location service.';
+    return;
+  }
+  status.textContent = 'Waiting for a GNSS fix…';
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const { latitude, longitude } = position.coords;
+      const located = state.network.locate(latitude, longitude);
+      if (!located) {
+        status.textContent =
+          'No line of the network model within 250 m; enter the journey information by hand.';
+        return;
+      }
+      const form = document.getElementById('journey-form');
+      form.elements.elr.value = located.elr;
+      form.elements.initialMileage.value = formatMileage(located.mileage);
+      const trackList = document.getElementById('track-list');
+      trackList.replaceChildren(
+        ...located.tracks.map((trid) => Object.assign(document.createElement('option'), {
+          value: trid,
+        })),
+      );
+      if (located.tracks.length === 1) form.elements.track.value = located.tracks[0];
+      status.textContent =
+        `ELR ${located.elr} at ${formatMileage(located.mileage)}, ` +
+        `${located.distanceM.toFixed(0)} m from the line` +
+        (located.tracks.length ? `; tracks here: ${located.tracks.join(', ')}` : '');
+    },
+    (err) => {
+      status.textContent = `Could not obtain a position: ${err.message}`;
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+  );
+});
+
 document.getElementById('journey-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const error = document.getElementById('setup-error');
@@ -113,7 +192,7 @@ document.getElementById('journey-form').addEventListener('submit', async (event)
   state.meta = {
     elr: data.elr,
     track: data.track,
-    initialMileageMi: Number(data.initialMileageMi) || 0,
+    initialMileageMi: parseMileage(data.initialMileage) ?? 0,
     mileageDirection: Number(data.mileageDirection) || 1,
     trainType: data.trainType,
     position: data.position,
@@ -166,14 +245,23 @@ function onPosition(fix) {
     `${fix.lat.toFixed(5)}, ${fix.lon.toFixed(5)}` +
     (fix.accuracy ? ` (±${fix.accuracy.toFixed(0)} m)` : '');
 
-  if (state.meta && typeof fix.speed === 'number') {
-    // Rough live mileage: the exact value is recomputed during post-processing
-    // from the filtered and resampled data.
-    const elapsed = fix.t;
+  // The network model gives the true mileage of the fix; without it the live
+  // mileage is a rough integration of the speed. Either way the exact value is
+  // recomputed during post-processing from the filtered and resampled data.
+  const located = state.network?.locate(fix.lat, fix.lon) ?? null;
+  const networkLine = document.getElementById('network-line');
+  if (located) {
+    document.getElementById('readout-mileage').textContent = formatMileage(located.mileage);
+    document.getElementById('readout-mileage-unit').textContent = 'miles + yards';
+    networkLine.textContent =
+      `ELR ${located.elr} · ${located.distanceM.toFixed(0)} m from the line` +
+      (located.tracks.length ? ` · tracks ${located.tracks.join(', ')}` : '');
+  } else if (state.meta && typeof fix.speed === 'number') {
     const mileage =
-      state.meta.initialMileageMi +
-      state.meta.mileageDirection * metresToMiles(fix.speed * elapsed);
+      state.meta.initialMileageMi + state.meta.mileageDirection * metresToMiles(fix.speed * fix.t);
     document.getElementById('readout-mileage').textContent = mileage.toFixed(3);
+    document.getElementById('readout-mileage-unit').textContent = 'miles';
+    networkLine.textContent = state.network ? 'Not located on the network model.' : '';
   }
 }
 
@@ -283,6 +371,9 @@ document.getElementById('processing-form').addEventListener('submit', (event) =>
       spatialStepM: Number(data.spatialStepM),
       initialMileageMi: Number(meta.initialMileageMi) || 0,
       mileageDirection: Number(meta.mileageDirection) || 1,
+      elr: meta.elr || null,
+      track: meta.track || null,
+      network: state.network,
     });
   } catch (error) {
     container.replaceChildren(
@@ -298,11 +389,28 @@ document.getElementById('processing-form').addEventListener('submit', (event) =>
 
 function renderResult(container, processed) {
   const stats = processed.statistics;
+  const location = processed.location ?? {};
   const summary = document.createElement('p');
   summary.className = 'hint';
   summary.textContent =
     `${stats.distanceMi.toFixed(3)} miles in ${stats.durationS.toFixed(0)} s · ` +
     `mean ${stats.speed.meanMph.toFixed(0)} mph · max ${stats.speed.maxMph.toFixed(0)} mph`;
+
+  const line = document.createElement('p');
+  line.className = 'hint';
+  line.textContent =
+    `ELR ${location.elr || '?'} · track ${location.track || location.tracks?.join(', ') || '?'} · ` +
+    `from ${formatMileage(location.initialMileageMi)} · ` +
+    `mileage ${location.mileageDirection < 0 ? 'decreasing' : 'increasing'} · ` +
+    (location.source === 'network-model'
+      ? 'located on the Network Rail network model'
+      : 'from the journey information') +
+    // A large residual means the run left the ELR it was anchored to, so the
+    // mileages further along the run are only as good as the distance travelled.
+    (location.residualM > 100
+      ? ` · mileage drifts by up to ${location.residualM.toFixed(0)} m, ` +
+        'the run may cross more than one ELR'
+      : '');
 
   const statsTable = buildTable(
     ['Channel', 'RMS', 'C95', 'Min', 'Max'],
@@ -322,7 +430,7 @@ function renderResult(container, processed) {
     processed.events
       .slice(0, 100)
       .map((e) => [
-        e.mileage === null ? '–' : e.mileage.toFixed(3),
+        e.mileage === null ? '–' : formatMileage(e.mileage),
         e.channel,
         e.level,
         `${e.value.toFixed(2)} m/s²`,
@@ -330,7 +438,7 @@ function renderResult(container, processed) {
       ]),
   );
 
-  container.replaceChildren(summary, statsTable, eventsTitle, eventsTable);
+  container.replaceChildren(summary, line, statsTable, eventsTitle, eventsTable);
 }
 
 function buildTable(header, rows) {
@@ -402,6 +510,7 @@ document.querySelectorAll('[data-export]').forEach((button) => {
 
 describeCapabilities();
 showScreen('setup');
+initNetworkModel();
 
 window.addEventListener('beforeunload', (event) => {
   if (state.recorder?.recording) {

@@ -12,6 +12,8 @@ import {
   metresToMiles,
   toMileage,
 } from './localisation.js';
+import { mileageDistanceM } from './mileage.js';
+import { DEFAULT_MAX_DISTANCE_M, mileageFromAnchor } from './network-model.js';
 import { detectThresholds, DEFAULT_THRESHOLDS } from './thresholds.js';
 
 /**
@@ -47,6 +49,19 @@ export const DEFAULT_OPTIONS = {
   initialMileageMi: 0,
   /** +1 when the mileage increases along the run, -1 otherwise. */
   mileageDirection: 1,
+  /** ELR of the run, when it was entered on the start screen. */
+  elr: null,
+  /** Track ID (TRID) of the run, when it was entered on the start screen. */
+  track: null,
+  /**
+   * Network model (`src/processing/network-model.js`) built from the Network
+   * Rail network model. When it is provided, the ELR, the track IDs and the
+   * mileage are read from the GNSS fixes instead of the values entered on the
+   * start screen.
+   */
+  network: null,
+  /** Farthest a fix may be from a line to be located on it, in metres. */
+  maxNetworkDistanceM: DEFAULT_MAX_DISTANCE_M,
   /** Threshold levels used by the detection step. */
   thresholds: DEFAULT_THRESHOLDS,
 };
@@ -68,6 +83,8 @@ export const DEFAULT_OPTIONS = {
  */
 export function processRun(run, userOptions = {}) {
   const options = { ...DEFAULT_OPTIONS, ...userOptions };
+  // The network model itself is a large object; only the settings are reported.
+  const { network: _network, ...reportedOptions } = options;
   const acceleration = [...(run.acceleration ?? [])].sort((a, b) => a.t - b.t);
   const gnss = [...(run.gnss ?? [])].sort((a, b) => a.t - b.t);
   if (acceleration.length < 2) {
@@ -122,7 +139,8 @@ export function processRun(run, userOptions = {}) {
     maxGapS: options.maxGnssGapS,
   });
   const distance = cumulativeDistance(times, speed);
-  const mileage = toMileage(distance, options.initialMileageMi, options.mileageDirection);
+  const location = locateRun(times, distance, gnss, options);
+  const mileage = location.mileage;
 
   const timeDomain = {
     time: times,
@@ -139,16 +157,113 @@ export function processRun(run, userOptions = {}) {
   // Step 5 - conversion to the space domain at a fixed spatial step.
   const spaceDomain = toSpaceDomain(timeDomain, options.spatialStepM);
 
-  // Step 6 - threshold detection.
-  const events = detectThresholds(spaceDomain, { levels: options.thresholds });
+  // Step 6 - threshold detection. Each exceedance is reported with the ELR, the
+  // track and the mileage the maintenance team works with.
+  const events = detectThresholds(spaceDomain, { levels: options.thresholds }).map((event) => ({
+    ...event,
+    elr: location.elr,
+    track: location.track,
+  }));
 
   return {
-    meta: { ...(run.meta ?? {}), options },
+    meta: { ...(run.meta ?? {}), options: reportedOptions },
+    location: {
+      elr: location.elr,
+      track: location.track,
+      tracks: location.tracks,
+      source: location.source,
+      initialMileageMi: mileage[0],
+      mileageDirection: location.mileageDirection,
+      residualM: location.residualM,
+      anchor: location.anchor,
+    },
     timeDomain,
     spaceDomain,
     events,
     statistics: computeStatistics(timeDomain),
   };
+}
+
+/**
+ * Turn the curvilinear distance into a mileage, and name the line the run was
+ * recorded on.
+ *
+ * When a network model is available, the GNSS fixes are located on it: the ELR,
+ * the mileage of the first located fix and the direction of the mileage are
+ * read from the Network Rail data instead of being typed by the operator, and
+ * the mileage of every sample is obtained by carrying the integrated distance
+ * from that anchor. Without a model — or for a run recorded outside its
+ * coverage — the initial mileage and direction of the start screen are used.
+ *
+ * @param {number[]} times timestamps in seconds
+ * @param {number[]} distance curvilinear distance in metres
+ * @param {import('./localisation.js').GnssSample[]} gnss GNSS fixes
+ * @param {typeof DEFAULT_OPTIONS} options
+ * @returns {{mileage:number[], elr:string|null, track:string|null, tracks:string[], source:string, mileageDirection:number, residualM:number|null, anchor:Object|null}}
+ */
+function locateRun(times, distance, gnss, options) {
+  const anchor = options.network
+    ? options.network.anchor(gnss, { maxDistanceM: options.maxNetworkDistanceM })
+    : null;
+
+  if (anchor) {
+    // The direction is only read from the model when the run actually moved.
+    const mileageDirection = anchor.mileageDirection ?? options.mileageDirection;
+    const anchorDistance = interpolateAt(times, distance, [anchor.t])[0] ?? 0;
+    const mileage = distance.map((d) =>
+      mileageFromAnchor(anchor.mileage, d - anchorDistance, mileageDirection),
+    );
+    // The track entered on the start screen wins, as long as the model knows it
+    // at that mileage; the guess is only made when a single track matches.
+    const known = options.track && anchor.tracks.includes(options.track);
+    return {
+      mileage,
+      elr: anchor.elr,
+      track: known ? options.track : anchor.tracks.length === 1 ? anchor.tracks[0] : null,
+      tracks: anchor.tracks,
+      source: 'network-model',
+      mileageDirection,
+      residualM: anchorResidualM(times, mileage, anchor),
+      anchor,
+    };
+  }
+
+  return {
+    mileage: toMileage(distance, options.initialMileageMi, options.mileageDirection),
+    elr: options.elr ?? null,
+    track: options.track ?? null,
+    tracks: [],
+    source: 'journey-information',
+    mileageDirection: options.mileageDirection,
+    residualM: null,
+    anchor: null,
+  };
+}
+
+/**
+ * How far the anchored mileage drifts from the mileages the model gives for the
+ * located fixes, in metres.
+ *
+ * The mileage of the run is carried from a single anchor, which assumes that
+ * the whole recording stays on one ELR and runs in one direction. A run that
+ * crosses onto another ELR, or that reverses, drifts away from the model; the
+ * residual is reported so that such a run can be spotted and split.
+ *
+ * @param {number[]} times timestamps in seconds
+ * @param {number[]} mileage anchored mileage per sample
+ * @param {Object} anchor result of `NetworkModel.anchor`
+ * @returns {number|null} largest deviation in metres, null without located fixes
+ */
+function anchorResidualM(times, mileage, anchor) {
+  const points = anchor.points ?? [];
+  if (points.length === 0) return null;
+  const expected = interpolateAt(times, mileage, points.map((p) => p.t));
+  let worst = 0;
+  for (let i = 0; i < points.length; i++) {
+    if (expected[i] === null) continue;
+    worst = Math.max(worst, Math.abs(mileageDistanceM(points[i].mileage, expected[i])));
+  }
+  return worst;
 }
 
 /**

@@ -1,2 +1,5 @@
 node_modules/
 .env
+
+# Reference file built from the Network Rail network model (npm run network-model)
+data/network-model.json
